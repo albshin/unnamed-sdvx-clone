@@ -1,5 +1,8 @@
 #pragma once
 #include "Beatmap.hpp"
+#include <thread>
+#include <mutex>
+#include "Database.hpp"
 
 struct SimpleHitStat
 {
@@ -64,6 +67,38 @@ struct MapIndex
 	Vector<DifficultyIndex*> difficulties;
 };
 
+struct SearchState
+{
+	struct ExistingDifficulty
+	{
+		int32 id;
+		uint64 lwt;
+	};
+	// Maps file paths to the id's and last write time's for difficulties already in the database
+	Map<String, ExistingDifficulty> difficulties;
+};
+
+// Represents an event produced from a scan
+//	a difficulty can be removed/added/updated
+//	a BeatmapSettings structure will be provided for added/updated events
+struct Event
+{
+	enum Action
+	{
+		Added,
+		Removed ,
+		Updated
+	};
+	Action action;
+	String path;
+	// Current lwt of file
+	uint64 lwt;
+	// Id of the map
+	int32 id;
+	// Scanned map data, for added/updated maps
+	BeatmapSettings* mapData = nullptr;
+};
+
 class MapDatabase : public Unique
 {
 public:
@@ -102,5 +137,32 @@ public:
 	Delegate<Map<int32, MapIndex*>> OnMapsCleared;
 
 private:
-	class MapDatabase_Impl* m_impl;
+	std::thread m_thread;
+	bool m_searching = false;
+	bool m_interruptSearch = false;
+	Set<String> m_searchPaths;
+	Database m_database;
+
+	Map<int32, MapIndex*> m_maps;
+	Map<int32, DifficultyIndex*> m_difficulties;
+	Map<String, MapIndex*> m_mapsByPath;
+	int32 m_nextMapId = 1;
+	int32 m_nextDiffId = 1;
+	String m_sortField = "title";
+
+	SearchState m_searchState;
+
+	List<Event> m_pendingChanges;
+	std::mutex m_pendingChangesLock;
+
+	static const int32 m_version = 10;
+
+	void m_CleanupMapIndex();
+	void m_CreateTables();
+	void m_LoadInitialData();
+	static void m_SortDifficulties(MapIndex* mapIndex);
+	static void m_SortScores(DifficultyIndex* diffIndex);
+	void m_SearchThread();
+	void AddChange(Event change);
+	List<Event> FlushChanges(size_t maxChanges = -1);
 };

@@ -105,5 +105,4 @@ private:
 	Vector<ZoomControlPoint*> m_zoomControlPoints;
 	Vector<String> m_samplePaths;
 	BeatmapSettings m_settings;
-	
 };
